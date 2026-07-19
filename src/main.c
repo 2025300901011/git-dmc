@@ -30,12 +30,77 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdint.h>
+#include <stdbool.h>
+
 #include "ti_msp_dl_config.h"
+#include "main.h"
+#include "motor.h"
+#include "adc.h"
+#include "pid.h"
+#include "mpu6050.h"
+#include "encoder.h"
+
+#define CAR_BASE_SPEED      (350)
+#define CAR_MAX_SPEED       (800)
+#define CAR_CONTROL_PERIOD  (1)
+
+volatile bool gControlFlag = false;
+volatile int16_t gGyroZ = 0;
+volatile int16_t gLeftEncoderSpeed = 0;
+volatile int16_t gRightEncoderSpeed = 0;
+volatile int16_t gLeftEncoderRawSpeed = 0;
+volatile int16_t gRightEncoderRawSpeed = 0;
 
 int main(void)
 {
     SYSCFG_DL_init();
+    Encoder_Init();
+    Motor_Init();
+    PID_Init();
+    if (MPU6050_Init()) {
+        (void) MPU6050_CalibrateGyroZ(MPU6050_CALIBRATION_SAMPLES);
+    }
+
+    NVIC_EnableIRQ(TIMER_CONTROL_INST_INT_IRQN);
+    DL_TimerG_startCounter(TIMER_CONTROL_INST);
 
     while (1) {
+        if (gControlFlag == false) {
+            continue;
+        }
+
+        gControlFlag = false;
+
+        int16_t error = LineSensor_GetError();
+        int16_t correction = PID_Calculate(error);
+        int16_t gyroZ = 0;
+
+        if (MPU6050_ReadGyroZ(&gyroZ)) {
+            gGyroZ = gyroZ;
+        }
+
+        Encoder_UpdateSpeeds();
+        gLeftEncoderSpeed = Encoder_GetLeftSpeed();
+        gRightEncoderSpeed = Encoder_GetRightSpeed();
+        gLeftEncoderRawSpeed = Encoder_GetLeftRawSpeed();
+        gRightEncoderRawSpeed = Encoder_GetRightRawSpeed();
+
+        int16_t leftSpeed = CAR_BASE_SPEED - correction;
+        int16_t rightSpeed = CAR_BASE_SPEED + correction;
+
+        Motor_SetSpeed(Motor_ClampSpeed(leftSpeed, CAR_MAX_SPEED),
+            Motor_ClampSpeed(rightSpeed, CAR_MAX_SPEED));
+    }
+}
+
+void TIMER_CONTROL_INST_IRQHandler(void)
+{
+    switch (DL_TimerG_getPendingInterrupt(TIMER_CONTROL_INST)) {
+        case DL_TIMER_IIDX_ZERO:
+            gControlFlag = true;
+            break;
+        default:
+            break;
     }
 }
