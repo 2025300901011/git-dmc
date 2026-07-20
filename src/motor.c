@@ -4,6 +4,9 @@
 #include "ti_msp_dl_config.h"
 #include "motor.h"
 
+#define MOTOR_LEFT_FORWARD_INVERTED  (0)
+#define MOTOR_RIGHT_FORWARD_INVERTED (0)
+
 static void Motor_SetLeftDirection(bool forward);
 static void Motor_SetRightDirection(bool forward);
 static uint16_t Motor_AbsSpeed(int16_t speed);
@@ -61,6 +64,8 @@ int16_t Motor_ClampSpeed(int16_t speed, int16_t maxAbsSpeed)
 
 static void Motor_SetLeftDirection(bool forward)
 {
+    forward = MOTOR_LEFT_FORWARD_INVERTED ? !forward : forward;
+
     if (forward) {
         DL_GPIO_setPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_AIN1_PIN);
         DL_GPIO_clearPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_AIN2_PIN);
@@ -72,6 +77,8 @@ static void Motor_SetLeftDirection(bool forward)
 
 static void Motor_SetRightDirection(bool forward)
 {
+    forward = MOTOR_RIGHT_FORWARD_INVERTED ? !forward : forward;
+
     if (forward) {
         DL_GPIO_setPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_BIN1_PIN);
         DL_GPIO_clearPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_BIN2_PIN);

@@ -3,10 +3,9 @@
 "./src/adc.o"
 "./src/encoder.o"
 "./src/main.o"
-"./src/mpu6050.o"
 "./src/motor.o"
+"./src/mpu6050.o"
 "./src/pid.o"
-"../syscfg_gen/device_linker.cmd"
 -l"C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device_linker.cmd"
 -l"../syscfg_gen/device.cmd.genlibs"
 -llibc.a

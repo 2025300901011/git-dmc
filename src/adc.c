@@ -3,8 +3,6 @@
 #include "ti_msp_dl_config.h"
 #include "adc.h"
 
-static int16_t gLastError = 0;
-
 uint8_t LineSensor_ReadRaw(void)
 {
     uint8_t value = 0;
@@ -38,7 +36,23 @@ uint8_t LineSensor_ReadRaw(void)
     value = (uint8_t) (~value);
 #endif
 
+    value &= (uint8_t) ((1U << LINE_SENSOR_COUNT) - 1U);
     return value;
+}
+
+uint8_t LineSensor_GetActiveCount(void)
+{
+    uint8_t raw = LineSensor_ReadRaw();
+    uint8_t activeCount = 0;
+    uint8_t i;
+
+    for (i = 0; i < LINE_SENSOR_COUNT; i++) {
+        if ((raw & (1U << i)) != 0U) {
+            activeCount++;
+        }
+    }
+
+    return activeCount;
 }
 
 int16_t LineSensor_GetError(void)
@@ -53,15 +67,18 @@ int16_t LineSensor_GetError(void)
 
     for (i = 0; i < LINE_SENSOR_COUNT; i++) {
         if ((raw & (1U << i)) != 0U) {
+#if LINE_SENSOR_REVERSE_ORDER
+            weightedSum += weights[(LINE_SENSOR_COUNT - 1U) - i];
+#else
             weightedSum += weights[i];
+#endif
             activeCount++;
         }
     }
 
     if (activeCount == 0) {
-        return gLastError;
+        return 0;
     }
 
-    gLastError = (int16_t) (weightedSum / activeCount);
-    return gLastError;
+    return (int16_t) (weightedSum / activeCount);
 }

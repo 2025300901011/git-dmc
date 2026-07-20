@@ -9,48 +9,48 @@ C_SRCS += \
 ../src/adc.c \
 ../src/encoder.c \
 ../src/main.c \
-../src/mpu6050.c \
 ../src/motor.c \
+../src/mpu6050.c \
 ../src/pid.c 
 
 C_DEPS += \
 ./src/adc.d \
 ./src/encoder.d \
 ./src/main.d \
-./src/mpu6050.d \
 ./src/motor.d \
+./src/mpu6050.d \
 ./src/pid.d 
 
 OBJS += \
 ./src/adc.o \
 ./src/encoder.o \
 ./src/main.o \
-./src/mpu6050.o \
 ./src/motor.o \
+./src/mpu6050.o \
 ./src/pid.o 
 
 OBJS__QUOTED += \
 "src\adc.o" \
 "src\encoder.o" \
 "src\main.o" \
-"src\mpu6050.o" \
 "src\motor.o" \
+"src\mpu6050.o" \
 "src\pid.o" 
 
 C_DEPS__QUOTED += \
 "src\adc.d" \
 "src\encoder.d" \
 "src\main.d" \
-"src\mpu6050.d" \
 "src\motor.d" \
+"src\mpu6050.d" \
 "src\pid.d" 
 
 C_SRCS__QUOTED += \
 "../src/adc.c" \
 "../src/encoder.c" \
 "../src/main.c" \
-"../src/mpu6050.c" \
 "../src/motor.c" \
+"../src/mpu6050.c" \
 "../src/pid.c" 
 
 

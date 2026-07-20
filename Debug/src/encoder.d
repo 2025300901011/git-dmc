@@ -1,6 +1,6 @@
 # FIXED
 
-src/main.o: ../src/main.c \
+src/encoder.o: ../src/encoder.c \
  C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/ti_msp_dl_config.h \
  E:/mspm0_sdk_2_10_00_04/source/ti/devices/msp/msp.h \
  E:/mspm0_sdk_2_10_00_04/source/ti/devices/DeviceFamily.h \
@@ -84,11 +84,6 @@ src/main.o: ../src/main.c \
  E:/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h \
  E:/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h \
  E:/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h \
- C:/Users/l/workspace_ccstheia/TI-car/inc/main.h \
- C:/Users/l/workspace_ccstheia/TI-car/inc/motor.h \
- C:/Users/l/workspace_ccstheia/TI-car/inc/adc.h \
- C:/Users/l/workspace_ccstheia/TI-car/inc/pid.h \
- C:/Users/l/workspace_ccstheia/TI-car/inc/mpu6050.h \
  C:/Users/l/workspace_ccstheia/TI-car/inc/encoder.h
 C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/ti_msp_dl_config.h:
 E:/mspm0_sdk_2_10_00_04/source/ti/devices/msp/msp.h:
@@ -173,9 +168,4 @@ E:/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_vref.h:
 E:/mspm0_sdk_2_10_00_04/source/ti/driverlib/dl_wwdt.h:
 E:/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_interrupt.h:
 E:/mspm0_sdk_2_10_00_04/source/ti/driverlib/m0p/dl_systick.h:
-C:/Users/l/workspace_ccstheia/TI-car/inc/main.h:
-C:/Users/l/workspace_ccstheia/TI-car/inc/motor.h:
-C:/Users/l/workspace_ccstheia/TI-car/inc/adc.h:
-C:/Users/l/workspace_ccstheia/TI-car/inc/pid.h:
-C:/Users/l/workspace_ccstheia/TI-car/inc/mpu6050.h:
 C:/Users/l/workspace_ccstheia/TI-car/inc/encoder.h:

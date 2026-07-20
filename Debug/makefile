@@ -15,10 +15,9 @@ ORDERED_OBJS += \
 "./src/adc.o" \
 "./src/encoder.o" \
 "./src/main.o" \
-"./src/mpu6050.o" \
 "./src/motor.o" \
+"./src/mpu6050.o" \
 "./src/pid.o" \
-"../syscfg_gen/device_linker.cmd" \
 $(GEN_CMDS__FLAG) \
 -Wl,-l"../syscfg_gen/device.cmd.genlibs" \
 -Wl,-llibc.a \
@@ -32,10 +31,8 @@ RMDIR := RMDIR /S/Q
 -include sources.mk
 -include subdir_vars.mk
 -include src/subdir_vars.mk
--include syscfg_gen/subdir_vars.mk
 -include subdir_rules.mk
 -include src/subdir_rules.mk
--include syscfg_gen/subdir_rules.mk
 -include objects.mk
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -131,24 +128,38 @@ TI-car.out
 EXE_OUTPUTS__QUOTED += \
 "TI-car.out" 
 
+BIN_OUTPUTS += \
+TI-car.hex 
+
+BIN_OUTPUTS__QUOTED += \
+"TI-car.hex" 
+
 
 # All Target
-all: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
-	@$(MAKE) --no-print-directory -Onone "TI-car.out"
+all: $(OBJS) $(GEN_CMDS)
+	@$(MAKE) --no-print-directory -Onone "TI-car.out" secondary-outputs
 
 # Tool invocations
-TI-car.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
+TI-car.out: $(OBJS) $(GEN_CMDS)
 	@echo 'Arm Linker - building target: "$@"'
 	"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/bin/tiarmclang.exe" @"../syscfg_gen/device.opt"  -march=thumbv6m -mcpu=cortex-m0plus -mfloat-abi=soft -mlittle-endian -mthumb -O2 -gdwarf-3 -Wall -Wl,-m"TI-car.map" -Wl,-i"E:/mspm0_sdk_2_10_00_04/source" -Wl,-i"C:/Users/l/workspace_ccstheia/TI-car" -Wl,-i"C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen" -Wl,-i"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/lib" -Wl,--diag_wrap=off -Wl,--display_error_number -Wl,--warn_sections -Wl,--xml_link_info="TI-car_linkInfo.xml" -Wl,--rom_model -o "TI-car.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 
+TI-car.hex: $(EXE_OUTPUTS)
+	@echo 'Arm Hex Utility - building secondary target: "$@"'
+	"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/bin/tiarmhex.exe" --memwidth=8 --romwidth=8 --diag_wrap=off -o "TI-car.hex" $(EXE_OUTPUTS__QUOTED)
+	@echo 'Finished building secondary target: "$@"'
+	@echo ' '
+
 # Other Targets
 clean:
-	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "syscfg_gen\ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "src\adc.o" "src\main.o" "src\motor.o" "src\pid.o" 
-	-$(RM) "syscfg_gen\ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "src\adc.d" "src\main.d" "src\motor.d" "src\pid.d" "syscfg_gen\ti_msp_dl_config.d" 
+	-$(RM) $(GEN_MISC_FILES__QUOTED)$(BIN_OUTPUTS__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
+	-$(RM) "syscfg_gen\ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "src\adc.o" "src\encoder.o" "src\main.o" "src\motor.o" "src\mpu6050.o" "src\pid.o" 
+	-$(RM) "syscfg_gen\ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "src\adc.d" "src\encoder.d" "src\main.d" "src\motor.d" "src\mpu6050.d" "src\pid.d" 
 	-@echo ' '
+
+secondary-outputs: $(BIN_OUTPUTS)
 
 .PHONY: all clean dependents
 .SECONDARY:

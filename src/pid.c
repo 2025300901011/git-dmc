@@ -2,9 +2,9 @@
 
 #include "pid.h"
 
-#define PID_KP (18)
+#define PID_KP (4)
 #define PID_KI (0)
-#define PID_KD (8)
+#define PID_KD (1)
 #define PID_SCALE (100)
 #define PID_INTEGRAL_LIMIT (10000)
 

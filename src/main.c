@@ -41,9 +41,16 @@
 #include "mpu6050.h"
 #include "encoder.h"
 
-#define CAR_BASE_SPEED      (350)
-#define CAR_MAX_SPEED       (800)
+#define CAR_BASE_SPEED      (45)
+#define CAR_MAX_SPEED       (120)
+#define CAR_MAX_CORRECTION  (20)
 #define CAR_CONTROL_PERIOD  (1)
+#define CAR_LINE_MAX_ACTIVE (6)
+#define CAR_ERROR_DEADBAND  (50)
+#define CAR_BALANCE_KP      (2)
+#define CAR_BALANCE_LIMIT   (25)
+/* Change this to -1 if the car turns farther away from the line. */
+#define CAR_TURN_SIGN       (1)
 
 volatile bool gControlFlag = false;
 volatile int16_t gGyroZ = 0;
@@ -51,6 +58,13 @@ volatile int16_t gLeftEncoderSpeed = 0;
 volatile int16_t gRightEncoderSpeed = 0;
 volatile int16_t gLeftEncoderRawSpeed = 0;
 volatile int16_t gRightEncoderRawSpeed = 0;
+volatile uint8_t gLineSensorRaw = 0;
+volatile uint8_t gLineSensorActiveCount = 0;
+volatile int16_t gLineError = 0;
+volatile int16_t gLineCorrection = 0;
+volatile int16_t gBalanceCorrection = 0;
+
+static int16_t AbsInt16(int16_t value);
 
 int main(void)
 {
@@ -65,6 +79,8 @@ int main(void)
     NVIC_EnableIRQ(TIMER_CONTROL_INST_INT_IRQN);
     DL_TimerG_startCounter(TIMER_CONTROL_INST);
 
+
+
     while (1) {
         if (gControlFlag == false) {
             continue;
@@ -72,8 +88,8 @@ int main(void)
 
         gControlFlag = false;
 
-        int16_t error = LineSensor_GetError();
-        int16_t correction = PID_Calculate(error);
+        gLineSensorRaw = LineSensor_ReadRaw();
+        gLineSensorActiveCount = LineSensor_GetActiveCount();
         int16_t gyroZ = 0;
 
         if (MPU6050_ReadGyroZ(&gyroZ)) {
@@ -86,12 +102,47 @@ int main(void)
         gLeftEncoderRawSpeed = Encoder_GetLeftRawSpeed();
         gRightEncoderRawSpeed = Encoder_GetRightRawSpeed();
 
-        int16_t leftSpeed = CAR_BASE_SPEED - correction;
-        int16_t rightSpeed = CAR_BASE_SPEED + correction;
+        if ((gLineSensorActiveCount == 0U) ||
+            (gLineSensorActiveCount > CAR_LINE_MAX_ACTIVE)) {
+            gLineError = 0;
+            gLineCorrection = 0;
+            Motor_Stop();
+            continue;
+        }
+
+        int16_t error = LineSensor_GetError();
+        if ((error > -CAR_ERROR_DEADBAND) && (error < CAR_ERROR_DEADBAND)) {
+            error = 0;
+        }
+
+        int16_t correction = PID_Calculate(error);
+        correction = Motor_ClampSpeed(correction, CAR_MAX_CORRECTION);
+        gLineError = error;
+        gLineCorrection = correction;
+
+        int16_t steering = (int16_t) (CAR_TURN_SIGN * correction);
+        int16_t leftMeasuredSpeed = AbsInt16(gLeftEncoderSpeed);
+        int16_t rightMeasuredSpeed = AbsInt16(gRightEncoderSpeed);
+        int16_t balanceCorrection =
+            (int16_t) ((rightMeasuredSpeed - leftMeasuredSpeed) * CAR_BALANCE_KP);
+        balanceCorrection = Motor_ClampSpeed(
+            balanceCorrection, CAR_BALANCE_LIMIT);
+        gBalanceCorrection = balanceCorrection;
+
+        int16_t leftSpeed = CAR_BASE_SPEED - steering + balanceCorrection;
+        int16_t rightSpeed = CAR_BASE_SPEED + steering - balanceCorrection;
 
         Motor_SetSpeed(Motor_ClampSpeed(leftSpeed, CAR_MAX_SPEED),
             Motor_ClampSpeed(rightSpeed, CAR_MAX_SPEED));
     }
+}
+
+static int16_t AbsInt16(int16_t value)
+{
+    if (value < 0) {
+        return (int16_t) (-value);
+    }
+    return value;
 }
 
 void TIMER_CONTROL_INST_IRQHandler(void)

@@ -120,5 +120,4 @@ GEN_OPTS__QUOTED :=
 SUBDIRS := \
 . \
 src \
-syscfg_gen \
 
