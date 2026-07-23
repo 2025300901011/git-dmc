@@ -47,17 +47,20 @@
 
 #define MPU6050_OK_WHO_AM_I (0x68)
 #define MPU6050_ACCEL_LSB_PER_G (16384)
-#define MPU6050_GYRO_LSB_PER_DPS (131)
+#define MPU6050_GYRO_CONFIG_2000DPS (0x18U)
+#define MPU6050_GYRO_LSB_PER_DPS (16.4f)
 #define I2C_TIMEOUT         (3200000U)
-#define IMU_SAMPLE_PERIOD_S (0.01f)
-#define IMU_SAMPLE_DELAY_CYCLES (320000U)
-#define IMU_CALIBRATION_SAMPLES (500U)
+#define IMU_SAMPLE_DELAY_CYCLES (32000U)
+#define IMU_CALIBRATION_SAMPLES (200U)
 #define IMU_ACCEL_LPF_ALPHA (0.20f)
 #define IMU_COMPLEMENTARY_ALPHA (0.98f)
 #define IMU_STILL_ACCEL_MIN_MG (850U)
 #define IMU_STILL_ACCEL_MAX_MG (1150U)
-#define IMU_STILL_GYRO_MAX_RAW (180)
-#define IMU_GYRO_BIAS_TRIM_ALPHA (0.0005f)
+#define IMU_STILL_GYRO_MAX_DPS (0.50f)
+#define IMU_GYRO_BIAS_TRIM_ALPHA (0.001f)
+#define IMU_GYRO_DEADBAND_DPS (0.25f)
+#define IMU_DT_MAX_MS (50U)
+#define UART_PRINT_DECIMATION (20U)
 #define RAD_TO_DEG (57.2957795f)
 
 volatile uint8_t gWhoAmI;
@@ -75,16 +78,21 @@ volatile int32_t gAccelZmg;
 volatile int32_t gGyroXdps;
 volatile int32_t gGyroYdps;
 volatile int32_t gGyroZdps;
+volatile int32_t gGyroXCdps;
+volatile int32_t gGyroYCdps;
+volatile int32_t gGyroZCdps;
 volatile int32_t gTempCentiC;
 volatile int32_t gGyroXBiasRaw;
 volatile int32_t gGyroYBiasRaw;
 volatile int32_t gGyroZBiasRaw;
 volatile int32_t gPitchCdeg;
 volatile int32_t gRollCdeg;
+volatile int32_t gYawCdeg;
 volatile int32_t gAccelPitchCdeg;
 volatile int32_t gAccelRollCdeg;
 volatile float gPitchDeg;
 volatile float gRollDeg;
+volatile float gYawDeg;
 volatile float gAccelPitchDeg;
 volatile float gAccelRollDeg;
 volatile uint8_t gAccelConfig;
@@ -97,6 +105,8 @@ volatile uint32_t gLoopCount;
 volatile uint32_t gReadOkCount;
 volatile uint32_t gReadFailCount;
 volatile uint32_t gCalibrationSamplesDone;
+volatile uint32_t gMillis;
+volatile uint32_t gLastDtMs;
 volatile bool gLastReadOk;
 volatile bool gImuCalibrating;
 volatile bool gImuStill;
@@ -108,9 +118,17 @@ static float sAccelYmgFilt;
 static float sAccelZmgFilt;
 static float sPitchDeg;
 static float sRollDeg;
+static float sYawDeg;
+static float sPrevGyroZRateDps;
 static float sGyroXBiasRaw;
 static float sGyroYBiasRaw;
 static float sGyroZBiasRaw;
+static bool sYawRateValid;
+
+void SysTick_Handler(void)
+{
+    gMillis++;
+}
 
 static void uart_putc(char c)
 {
@@ -128,10 +146,10 @@ static void uart_print_sample(void)
 {
     char line[160];
     int count = snprintf(line, sizeof(line),
-        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d\r\n",
+        "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%d,%d,%u,%u\r\n",
         gAccelX, gAccelY, gAccelZ, gGyroX, gGyroY, gGyroZ, gTempRaw,
         gAccelXmg, gAccelYmg, gAccelZmg, gAccelTotalMg, gPitchCdeg,
-        gRollCdeg);
+        gRollCdeg, gYawCdeg, gGyroZCdps, gLastDtMs, gImuStill ? 1U : 0U);
 
     if (count > 0) {
         uart_puts(line);
@@ -245,7 +263,12 @@ static int32_t accel_raw_to_mg(int16_t raw)
 
 static int32_t gyro_raw_to_dps(int16_t raw)
 {
-    return ((int32_t) raw) / MPU6050_GYRO_LSB_PER_DPS;
+    return (int32_t) ((float) raw / MPU6050_GYRO_LSB_PER_DPS);
+}
+
+static int32_t gyro_raw_to_cdps(int16_t raw)
+{
+    return (int32_t) (((float) raw * 100.0f) / MPU6050_GYRO_LSB_PER_DPS);
 }
 
 static int32_t temp_raw_to_centi_c(int16_t raw)
@@ -281,6 +304,38 @@ static int32_t float_to_cdeg(float degrees)
                                       (degrees * 100.0f - 0.5f));
 }
 
+static float apply_gyro_deadband(float rateDps)
+{
+    if ((rateDps > -IMU_GYRO_DEADBAND_DPS) &&
+        (rateDps < IMU_GYRO_DEADBAND_DPS)) {
+        return 0.0f;
+    }
+
+    return rateDps;
+}
+
+static float wrap_degrees_180(float degrees)
+{
+    while (degrees > 180.0f) {
+        degrees -= 360.0f;
+    }
+
+    while (degrees < -180.0f) {
+        degrees += 360.0f;
+    }
+
+    return degrees;
+}
+
+static void imu_systick_init(void)
+{
+    SysTick->LOAD = (CPUCLK_FREQ / 1000U) - 1U;
+    SysTick->VAL = 0U;
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk |
+                    SysTick_CTRL_TICKINT_Msk |
+                    SysTick_CTRL_ENABLE_Msk;
+}
+
 static bool mpu6050_init(void)
 {
     if (!mpu6050_write_reg(MPU6050_PWR_MGMT_1, 0x80)) {
@@ -303,7 +358,7 @@ static bool mpu6050_init(void)
         return false;
     }
 
-    if (!mpu6050_write_reg(MPU6050_GYRO_CONFIG, 0x00)) {
+    if (!mpu6050_write_reg(MPU6050_GYRO_CONFIG, MPU6050_GYRO_CONFIG_2000DPS)) {
         return false;
     }
 
@@ -327,7 +382,7 @@ static bool mpu6050_init(void)
 
     gMpu6050ConfigOk = (gWhoAmI == MPU6050_OK_WHO_AM_I) &&
                        (gAccelConfig == 0x00U) &&
-                       (gGyroConfig == 0x00U);
+                       (gGyroConfig == MPU6050_GYRO_CONFIG_2000DPS);
 
     return gMpu6050ConfigOk;
 }
@@ -352,6 +407,9 @@ static bool mpu6050_read_all(void)
     gGyroXdps = gyro_raw_to_dps(gGyroX);
     gGyroYdps = gyro_raw_to_dps(gGyroY);
     gGyroZdps = gyro_raw_to_dps(gGyroZ);
+    gGyroXCdps = gyro_raw_to_cdps(gGyroX);
+    gGyroYCdps = gyro_raw_to_cdps(gGyroY);
+    gGyroZCdps = gyro_raw_to_cdps(gGyroZ);
     gTempCentiC = temp_raw_to_centi_c(gTempRaw);
     gAccelMagnitudeSq =
         (uint32_t) ((int32_t) gAccelX * (int32_t) gAccelX) +
@@ -365,21 +423,24 @@ static bool mpu6050_read_all(void)
 
 static bool imu_is_still(void)
 {
-    int32_t gyroX = (int32_t) gGyroX - gGyroXBiasRaw;
-    int32_t gyroY = (int32_t) gGyroY - gGyroYBiasRaw;
-    int32_t gyroZ = (int32_t) gGyroZ - gGyroZBiasRaw;
+    float gyroX = ((float) gGyroX - sGyroXBiasRaw) /
+                  MPU6050_GYRO_LSB_PER_DPS;
+    float gyroY = ((float) gGyroY - sGyroYBiasRaw) /
+                  MPU6050_GYRO_LSB_PER_DPS;
+    float gyroZ = ((float) gGyroZ - sGyroZBiasRaw) /
+                  MPU6050_GYRO_LSB_PER_DPS;
 
     if ((gAccelTotalMg < IMU_STILL_ACCEL_MIN_MG) ||
         (gAccelTotalMg > IMU_STILL_ACCEL_MAX_MG)) {
         return false;
     }
 
-    return (gyroX > -IMU_STILL_GYRO_MAX_RAW) &&
-           (gyroX < IMU_STILL_GYRO_MAX_RAW) &&
-           (gyroY > -IMU_STILL_GYRO_MAX_RAW) &&
-           (gyroY < IMU_STILL_GYRO_MAX_RAW) &&
-           (gyroZ > -IMU_STILL_GYRO_MAX_RAW) &&
-           (gyroZ < IMU_STILL_GYRO_MAX_RAW);
+    return (gyroX > -IMU_STILL_GYRO_MAX_DPS) &&
+           (gyroX < IMU_STILL_GYRO_MAX_DPS) &&
+           (gyroY > -IMU_STILL_GYRO_MAX_DPS) &&
+           (gyroY < IMU_STILL_GYRO_MAX_DPS) &&
+           (gyroZ > -IMU_STILL_GYRO_MAX_DPS) &&
+           (gyroZ < IMU_STILL_GYRO_MAX_DPS);
 }
 
 static bool imu_calibrate_stationary(void)
@@ -426,10 +487,15 @@ static bool imu_calibrate_stationary(void)
               (sAccelZmgFilt * sAccelZmgFilt))) * RAD_TO_DEG;
     sRollDeg = gAccelRollDeg;
     sPitchDeg = gAccelPitchDeg;
+    sYawDeg = 0.0f;
+    sPrevGyroZRateDps = 0.0f;
+    sYawRateValid = false;
     gRollDeg = sRollDeg;
     gPitchDeg = sPitchDeg;
+    gYawDeg = sYawDeg;
     gRollCdeg = float_to_cdeg(gRollDeg);
     gPitchCdeg = float_to_cdeg(gPitchDeg);
+    gYawCdeg = float_to_cdeg(gYawDeg);
     gAccelRollCdeg = float_to_cdeg(gAccelRollDeg);
     gAccelPitchCdeg = float_to_cdeg(gAccelPitchDeg);
     gImuCalibrating = false;
@@ -440,11 +506,15 @@ static bool imu_calibrate_stationary(void)
 static void imu_update_filters(float dt)
 {
     float gyroXRateDps = ((float) gGyroX - sGyroXBiasRaw) /
-                         (float) MPU6050_GYRO_LSB_PER_DPS;
+                         MPU6050_GYRO_LSB_PER_DPS;
     float gyroYRateDps = ((float) gGyroY - sGyroYBiasRaw) /
-                         (float) MPU6050_GYRO_LSB_PER_DPS;
+                         MPU6050_GYRO_LSB_PER_DPS;
     float gyroZRateDps = ((float) gGyroZ - sGyroZBiasRaw) /
-                         (float) MPU6050_GYRO_LSB_PER_DPS;
+                         MPU6050_GYRO_LSB_PER_DPS;
+
+    gyroXRateDps = apply_gyro_deadband(gyroXRateDps);
+    gyroYRateDps = apply_gyro_deadband(gyroYRateDps);
+    gyroZRateDps = apply_gyro_deadband(gyroZRateDps);
 
     sAccelXmgFilt += IMU_ACCEL_LPF_ALPHA *
                      ((float) gAccelXmg - sAccelXmgFilt);
@@ -463,6 +533,13 @@ static void imu_update_filters(float dt)
     sPitchDeg = IMU_COMPLEMENTARY_ALPHA * (sPitchDeg + gyroYRateDps * dt) +
                 (1.0f - IMU_COMPLEMENTARY_ALPHA) * gAccelPitchDeg;
 
+    if (sYawRateValid) {
+        sYawDeg += 0.5f * (sPrevGyroZRateDps + gyroZRateDps) * dt;
+    }
+    sYawDeg = wrap_degrees_180(sYawDeg);
+    sPrevGyroZRateDps = gyroZRateDps;
+    sYawRateValid = true;
+
     gImuStill = imu_is_still();
     if (gImuStill) {
         sGyroXBiasRaw += IMU_GYRO_BIAS_TRIM_ALPHA *
@@ -479,21 +556,30 @@ static void imu_update_filters(float dt)
     gGyroXdps = (int32_t) gyroXRateDps;
     gGyroYdps = (int32_t) gyroYRateDps;
     gGyroZdps = (int32_t) gyroZRateDps;
+    gGyroXCdps = float_to_cdeg(gyroXRateDps);
+    gGyroYCdps = float_to_cdeg(gyroYRateDps);
+    gGyroZCdps = float_to_cdeg(gyroZRateDps);
     gRollDeg = sRollDeg;
     gPitchDeg = sPitchDeg;
+    gYawDeg = sYawDeg;
     gRollCdeg = float_to_cdeg(gRollDeg);
     gPitchCdeg = float_to_cdeg(gPitchDeg);
+    gYawCdeg = float_to_cdeg(gYawDeg);
     gAccelRollCdeg = float_to_cdeg(gAccelRollDeg);
     gAccelPitchCdeg = float_to_cdeg(gAccelPitchDeg);
 }
 
 int main(void)
 {
+    uint32_t lastUpdateMs;
+    uint32_t printDivider = 0U;
+
     SYSCFG_DL_init();
+    imu_systick_init();
 
     DL_GPIO_clearPins(GPIO_LEDS_PORT, GPIO_LEDS_USER_LED_1_PIN);
     delay_cycles(160000);
-    uart_puts("ax,ay,az,gx,gy,gz,temp,ax_mg,ay_mg,az_mg,total_mg,pitch_cdeg,roll_cdeg\r\n");
+    uart_puts("ax,ay,az,gx,gy,gz,temp,ax_mg,ay_mg,az_mg,total_mg,pitch_cdeg,roll_cdeg,yaw_cdeg,gz_cdps,dt_ms,still\r\n");
 
     delay_cycles(3200000);
 
@@ -501,6 +587,7 @@ int main(void)
     if (gMpu6050Online) {
         gMpu6050Online = imu_calibrate_stationary();
     }
+    lastUpdateMs = gMillis;
 
     while (1) {
         gLoopCount++;
@@ -510,15 +597,32 @@ int main(void)
         }
 
         if (gMpu6050Online && mpu6050_read_all()) {
+            uint32_t nowMs = gMillis;
+            uint32_t dtMs = nowMs - lastUpdateMs;
+            float dt;
+
+            lastUpdateMs = nowMs;
+            if (dtMs == 0U) {
+                dtMs = 1U;
+            } else if (dtMs > IMU_DT_MAX_MS) {
+                dtMs = IMU_DT_MAX_MS;
+            }
+            gLastDtMs = dtMs;
+            dt = (float) dtMs * 0.001f;
+
             gLastReadOk = true;
             gReadOkCount++;
-            imu_update_filters(IMU_SAMPLE_PERIOD_S);
-            uart_print_sample();
+            imu_update_filters(dt);
+            if (++printDivider >= UART_PRINT_DECIMATION) {
+                printDivider = 0U;
+                uart_print_sample();
+            }
             DL_GPIO_togglePins(GPIO_LEDS_PORT, GPIO_LEDS_USER_LED_1_PIN);
         } else {
             gLastReadOk = false;
             gReadFailCount++;
             gMpu6050Online = false;
+            sYawRateValid = false;
             DL_GPIO_setPins(GPIO_LEDS_PORT, GPIO_LEDS_USER_LED_1_PIN);
         }
 
