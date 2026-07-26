@@ -1,182 +1,113 @@
-#include <stdbool.h>
-#include <stdint.h>
-
-#include "ti_msp_dl_config.h"
 #include "encoder.h"
 
-#define ENCODER_FILTER_PREV_WEIGHT (3)
-#define ENCODER_FILTER_CURR_WEIGHT (7)
-#define ENCODER_FILTER_SCALE       (10)
+#include "app_config.h"
+#include "hw_map.h"
 
-#define ENCODER_LEFT_REVERSE       (0)
-#define ENCODER_RIGHT_REVERSE      (0)
+static Encoder_State_t g_enc[2];
+static uint32_t g_qei_last_raw;
+static uint8_t g_enc2_last_state;
+static int32_t g_enc2_last_count;
 
-static volatile int32_t gLeftCount = 0;
-static volatile int32_t gRightCount = 0;
-static int32_t gLastLeftCount = 0;
-static int32_t gLastRightCount = 0;
-static int16_t gLeftRawSpeed = 0;
-static int16_t gRightRawSpeed = 0;
-static int16_t gLeftSpeed = 0;
-static int16_t gRightSpeed = 0;
-static bool gLeftSpeedInitialized = false;
-static bool gRightSpeedInitialized = false;
+static const int8_t g_quad_lut[16] = {
+    0, -1, 1, 0,
+    1, 0, 0, -1,
+    -1, 0, 0, 1,
+    0, 1, -1, 0
+};
 
-static void Encoder_HandleLeftEdge(void);
-static void Encoder_HandleRightEdge(void);
-static int16_t Encoder_SmoothSpeed(
-    int16_t currentSpeed, int16_t lastSpeed, bool *initialized);
-static int16_t Encoder_ClampDelta(int32_t delta);
+static uint8_t enc2_read_state(void)
+{
+    uint8_t s = 0U;
+    if (DL_GPIO_readPins(GPIO_ENC2_INPUT_PORT, GPIO_ENC2_INPUT_ENC2_A_PIN) != 0U) {
+        s |= 0x01U;
+    }
+    if (DL_GPIO_readPins(GPIO_ENC2_INPUT_PORT, GPIO_ENC2_INPUT_ENC2_B_PIN) != 0U) {
+        s |= 0x02U;
+    }
+    return s;
+}
+
+static int32_t wrap_delta_16(uint32_t now, uint32_t last)
+{
+    int32_t d = (int32_t) now - (int32_t) last;
+    if (d > 32767) {
+        d -= 65536;
+    } else if (d < -32768) {
+        d += 65536;
+    }
+    return d;
+}
 
 void Encoder_Init(void)
 {
-    gLeftCount = 0;
-    gRightCount = 0;
-    gLastLeftCount = 0;
-    gLastRightCount = 0;
-    gLeftRawSpeed = 0;
-    gRightRawSpeed = 0;
-    gLeftSpeed = 0;
-    gRightSpeed = 0;
-    gLeftSpeedInitialized = false;
-    gRightSpeedInitialized = false;
+    g_enc[0].count_raw = 0;
+    g_enc[1].count_raw = 0;
+    g_enc[0].delta     = 0;
+    g_enc[1].delta     = 0;
+    g_enc[0].speed_rps = 0.0f;
+    g_enc[1].speed_rps = 0.0f;
 
-    DL_GPIO_clearInterruptStatus(GPIO_ENCODER_PORT,
-        GPIO_ENCODER_ENCODER_LEFT_A_PIN | GPIO_ENCODER_ENCODER_RIGHT_A_PIN);
-    NVIC_EnableIRQ(GPIO_ENCODER_INT_IRQN);
+    g_qei_last_raw   = DL_Timer_getTimerCount(QEI_ENC1_INST);
+    g_enc2_last_state = enc2_read_state();
+    g_enc2_last_count = 0;
+
+    DL_Timer_startCounter(QEI_ENC1_INST);
 }
 
-void Encoder_UpdateSpeeds(void)
+void Encoder_PollGpio(void)
 {
-    int32_t leftCount;
-    int32_t rightCount;
-    int32_t leftDelta;
-    int32_t rightDelta;
+    uint8_t now_state = enc2_read_state();
+    uint8_t idx       = (uint8_t) ((g_enc2_last_state << 2U) | now_state);
+    int8_t step       = g_quad_lut[idx & 0x0FU];
 
-    NVIC_DisableIRQ(GPIO_ENCODER_INT_IRQN);
-    leftCount = gLeftCount;
-    rightCount = gRightCount;
-    NVIC_EnableIRQ(GPIO_ENCODER_INT_IRQN);
-
-    leftDelta = leftCount - gLastLeftCount;
-    rightDelta = rightCount - gLastRightCount;
-    gLastLeftCount = leftCount;
-    gLastRightCount = rightCount;
-
-    gLeftRawSpeed = Encoder_ClampDelta(leftDelta);
-    gRightRawSpeed = Encoder_ClampDelta(rightDelta);
-    gLeftSpeed = Encoder_SmoothSpeed(
-        gLeftRawSpeed, gLeftSpeed, &gLeftSpeedInitialized);
-    gRightSpeed = Encoder_SmoothSpeed(
-        gRightRawSpeed, gRightSpeed, &gRightSpeedInitialized);
-}
-
-int32_t Encoder_GetLeftCount(void)
-{
-    return gLeftCount;
-}
-
-int32_t Encoder_GetRightCount(void)
-{
-    return gRightCount;
-}
-
-int16_t Encoder_GetLeftSpeed(void)
-{
-    return gLeftSpeed;
-}
-
-int16_t Encoder_GetRightSpeed(void)
-{
-    return gRightSpeed;
-}
-
-int16_t Encoder_GetLeftRawSpeed(void)
-{
-    return gLeftRawSpeed;
-}
-
-int16_t Encoder_GetRightRawSpeed(void)
-{
-    return gRightRawSpeed;
-}
-
-void GROUP1_IRQHandler(void)
-{
-    switch (DL_Interrupt_getPendingGroup(DL_INTERRUPT_GROUP_1)) {
-        case GPIO_ENCODER_INT_IIDX:
-            if (DL_GPIO_getEnabledInterruptStatus(GPIO_ENCODER_PORT,
-                    GPIO_ENCODER_ENCODER_LEFT_A_PIN)) {
-                Encoder_HandleLeftEdge();
-                DL_GPIO_clearInterruptStatus(
-                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_LEFT_A_PIN);
-            }
-
-            if (DL_GPIO_getEnabledInterruptStatus(GPIO_ENCODER_PORT,
-                    GPIO_ENCODER_ENCODER_RIGHT_A_PIN)) {
-                Encoder_HandleRightEdge();
-                DL_GPIO_clearInterruptStatus(
-                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_RIGHT_A_PIN);
-            }
-            break;
-        default:
-            break;
+    if (step != 0) {
+        g_enc[1].count_raw += (int32_t) step;
     }
+    g_enc2_last_state = now_state;
 }
 
-static void Encoder_HandleLeftEdge(void)
+void Encoder_UpdateSpeed(uint32_t dt_ms)
 {
-    bool phaseAHigh = (DL_GPIO_readPins(GPIO_ENCODER_PORT,
-        GPIO_ENCODER_ENCODER_LEFT_A_PIN) != 0);
-    bool phaseBHigh = (DL_GPIO_readPins(GPIO_ENCODER_PORT,
-        GPIO_ENCODER_ENCODER_LEFT_B_PIN) != 0);
-    int32_t step = (phaseAHigh == phaseBHigh) ? 1 : -1;
+    uint32_t qei_now;
+    int32_t d0;
+    int32_t d1;
+    float dt_s;
+    float alpha;
 
-    if (ENCODER_LEFT_REVERSE) {
-        step = -step;
-    }
-    gLeftCount += step;
-}
-
-static void Encoder_HandleRightEdge(void)
-{
-    bool phaseAHigh = (DL_GPIO_readPins(GPIO_ENCODER_PORT,
-        GPIO_ENCODER_ENCODER_RIGHT_A_PIN) != 0);
-    bool phaseBHigh = (DL_GPIO_readPins(GPIO_ENCODER_PORT,
-        GPIO_ENCODER_ENCODER_RIGHT_B_PIN) != 0);
-    int32_t step = (phaseAHigh == phaseBHigh) ? 1 : -1;
-
-    if (ENCODER_RIGHT_REVERSE) {
-        step = -step;
-    }
-    gRightCount += step;
-}
-
-static int16_t Encoder_SmoothSpeed(
-    int16_t currentSpeed, int16_t lastSpeed, bool *initialized)
-{
-    int32_t filteredSpeed;
-
-    if (*initialized == false) {
-        *initialized = true;
-        return currentSpeed;
+    if (dt_ms == 0U) {
+        return;
     }
 
-    filteredSpeed =
-        ((int32_t) lastSpeed * ENCODER_FILTER_PREV_WEIGHT) +
-        ((int32_t) currentSpeed * ENCODER_FILTER_CURR_WEIGHT);
-    filteredSpeed /= ENCODER_FILTER_SCALE;
+    qei_now = DL_Timer_getTimerCount(QEI_ENC1_INST);
+    d0      = wrap_delta_16(qei_now, g_qei_last_raw);
+    d1      = g_enc[1].count_raw - g_enc2_last_count;
 
-    return (int16_t) filteredSpeed;
+    g_qei_last_raw    = qei_now;
+    g_enc[0].count_raw += d0;
+    g_enc[0].delta     = d0;
+
+    g_enc[1].delta = d1;
+    g_enc2_last_count = g_enc[1].count_raw;
+
+    dt_s  = (float) dt_ms * 0.001f;
+    alpha = ENCODER_SPEED_FILTER_ALPHA;
+
+    g_enc[0].speed_rps = (1.0f - alpha) * g_enc[0].speed_rps + alpha * ((float) d0 / dt_s);
+    g_enc[1].speed_rps = (1.0f - alpha) * g_enc[1].speed_rps + alpha * ((float) d1 / dt_s);
 }
 
-static int16_t Encoder_ClampDelta(int32_t delta)
+int32_t Encoder_GetCount(uint8_t idx)
 {
-    if (delta > INT16_MAX) {
-        return INT16_MAX;
+    if (idx > 1U) {
+        return 0;
     }
-    if (delta < INT16_MIN) {
-        return INT16_MIN;
+    return g_enc[idx].count_raw;
+}
+
+float Encoder_GetSpeedRps(uint8_t idx)
+{
+    if (idx > 1U) {
+        return 0.0f;
     }
-    return (int16_t) delta;
+    return g_enc[idx].speed_rps;
 }

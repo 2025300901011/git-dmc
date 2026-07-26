@@ -4,5 +4,5 @@
 
 USER_OBJS :=
 
-LIBS := -Wl,-l"../syscfg_gen/device.cmd.genlibs" -Wl,-llibc.a
+LIBS := -Wl,-ldevice.cmd.genlibs -Wl,-llibc.a
 

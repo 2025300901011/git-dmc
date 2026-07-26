@@ -1,40 +1,58 @@
-#include <stdint.h>
-
 #include "pid.h"
 
-#define PID_KP (18)
-#define PID_KI (0)
-#define PID_KD (8)
-#define PID_SCALE (100)
-#define PID_INTEGRAL_LIMIT (10000)
-
-static int16_t gLastError = 0;
-static int32_t gIntegral = 0;
-
-void PID_Init(void)
+static float clampf(float v, float lo, float hi)
 {
-    gLastError = 0;
-    gIntegral = 0;
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
 }
 
-int16_t PID_Calculate(int16_t error)
+void PID_Reset(PID_Handle_t *pid)
 {
-    int16_t derivative;
-    int32_t output;
+    if (pid == 0) {
+        return;
+    }
+    pid->integral = 0.0f;
+    pid->last_err = 0.0f;
+    pid->last_fdb = 0.0f;
+    pid->out      = 0.0f;
+}
 
-    gIntegral += error;
-    if (gIntegral > PID_INTEGRAL_LIMIT) {
-        gIntegral = PID_INTEGRAL_LIMIT;
-    } else if (gIntegral < -PID_INTEGRAL_LIMIT) {
-        gIntegral = -PID_INTEGRAL_LIMIT;
+void PID_LoadConfig(PID_Handle_t *pid, const PID_Config_t *cfg)
+{
+    if ((pid == 0) || (cfg == 0)) {
+        return;
+    }
+    pid->cfg = *cfg;
+    PID_Reset(pid);
+}
+
+float PID_Update(PID_Handle_t *pid, float ref, float fdb, float dt_s)
+{
+    float err;
+    float der;
+    float out;
+
+    if ((pid == 0) || (dt_s <= 0.0f)) {
+        return 0.0f;
     }
 
-    derivative = error - gLastError;
-    gLastError = error;
+    err = ref - fdb;
+    der = (err - pid->last_err) / dt_s;
 
-    output = ((int32_t) PID_KP * error) +
-             ((int32_t) PID_KI * gIntegral) +
-             ((int32_t) PID_KD * derivative);
+    pid->integral += err * dt_s;
+    pid->integral = clampf(pid->integral, -pid->cfg.i_max, pid->cfg.i_max);
 
-    return (int16_t) (output / PID_SCALE);
+    out = pid->cfg.kp * err + pid->cfg.ki * pid->integral + pid->cfg.kd * der;
+    out = clampf(out, -pid->cfg.out_max, pid->cfg.out_max);
+
+    pid->last_err = err;
+    pid->last_fdb = fdb;
+    pid->out      = out;
+
+    return out;
 }

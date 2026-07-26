@@ -9,56 +9,56 @@ SYSCFG_SRCS += \
 ../empty.syscfg 
 
 C_SRCS += \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/ti_msp_dl_config.c \
-E:/mspm0_sdk_2_10_00_04/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c 
+./ti_msp_dl_config.c \
+C:/TI/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c 
 
 GEN_CMDS += \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device_linker.cmd 
+./device_linker.cmd 
 
 GEN_FILES += \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device_linker.cmd \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device.opt \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/ti_msp_dl_config.c 
+./device_linker.cmd \
+./device.opt \
+./ti_msp_dl_config.c 
 
 C_DEPS += \
-./syscfg_gen/ti_msp_dl_config.d \
+./ti_msp_dl_config.d \
 ./startup_mspm0g350x_ticlang.d 
 
 GEN_OPTS += \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device.opt 
+./device.opt 
 
 OBJS += \
-./syscfg_gen/ti_msp_dl_config.o \
+./ti_msp_dl_config.o \
 ./startup_mspm0g350x_ticlang.o 
 
 GEN_MISC_FILES += \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device.cmd.genlibs \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/ti_msp_dl_config.h \
-C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/Event.dot 
+./device.cmd.genlibs \
+./ti_msp_dl_config.h \
+./Event.dot 
 
 OBJS__QUOTED += \
-"syscfg_gen\ti_msp_dl_config.o" \
+"ti_msp_dl_config.o" \
 "startup_mspm0g350x_ticlang.o" 
 
 GEN_MISC_FILES__QUOTED += \
-"C:\Users\l\workspace_ccstheia\TI-car\syscfg_gen\device.cmd.genlibs" \
-"C:\Users\l\workspace_ccstheia\TI-car\syscfg_gen\ti_msp_dl_config.h" \
-"C:\Users\l\workspace_ccstheia\TI-car\syscfg_gen\Event.dot" 
+"device.cmd.genlibs" \
+"ti_msp_dl_config.h" \
+"Event.dot" 
 
 C_DEPS__QUOTED += \
-"syscfg_gen\ti_msp_dl_config.d" \
+"ti_msp_dl_config.d" \
 "startup_mspm0g350x_ticlang.d" 
 
 GEN_FILES__QUOTED += \
-"C:\Users\l\workspace_ccstheia\TI-car\syscfg_gen\device_linker.cmd" \
-"C:\Users\l\workspace_ccstheia\TI-car\syscfg_gen\device.opt" \
-"C:\Users\l\workspace_ccstheia\TI-car\syscfg_gen\ti_msp_dl_config.c" 
+"device_linker.cmd" \
+"device.opt" \
+"ti_msp_dl_config.c" 
 
 SYSCFG_SRCS__QUOTED += \
 "../empty.syscfg" 
 
 C_SRCS__QUOTED += \
-"C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/ti_msp_dl_config.c" \
-"E:/mspm0_sdk_2_10_00_04/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" 
+"./ti_msp_dl_config.c" \
+"C:/TI/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" 
 
 

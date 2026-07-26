@@ -6,21 +6,21 @@ SHELL = cmd.exe
 
 CG_TOOL_ROOT := E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS
 
-GEN_OPTS__FLAG := @"C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device.opt" 
-GEN_CMDS__FLAG := -Wl,-l"C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen/device_linker.cmd" 
+GEN_OPTS__FLAG := @"./device.opt" 
+GEN_CMDS__FLAG := -Wl,-l"./device_linker.cmd" 
 
 ORDERED_OBJS += \
-"./syscfg_gen/ti_msp_dl_config.o" \
+"./ti_msp_dl_config.o" \
 "./startup_mspm0g350x_ticlang.o" \
-"./src/adc.o" \
+"./src/control.o" \
 "./src/encoder.o" \
 "./src/main.o" \
-"./src/mpu6050.o" \
 "./src/motor.o" \
 "./src/pid.o" \
-"../syscfg_gen/device_linker.cmd" \
+"./src/safty.o" \
+"./src/vision.o" \
 $(GEN_CMDS__FLAG) \
--Wl,-l"../syscfg_gen/device.cmd.genlibs" \
+-Wl,-ldevice.cmd.genlibs \
 -Wl,-llibc.a \
 
 -include ../makefile.init
@@ -32,10 +32,8 @@ RMDIR := RMDIR /S/Q
 -include sources.mk
 -include subdir_vars.mk
 -include src/subdir_vars.mk
--include syscfg_gen/subdir_vars.mk
 -include subdir_rules.mk
 -include src/subdir_rules.mk
--include syscfg_gen/subdir_rules.mk
 -include objects.mk
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -126,28 +124,28 @@ endif
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXE_OUTPUTS += \
-TI-car.out 
+ball\ PID.out 
 
 EXE_OUTPUTS__QUOTED += \
-"TI-car.out" 
+"ball PID.out" 
 
 
 # All Target
-all: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
-	@$(MAKE) --no-print-directory -Onone "TI-car.out"
+all: $(OBJS) $(GEN_CMDS)
+	@$(MAKE) --no-print-directory -Onone "ball PID.out"
 
 # Tool invocations
-TI-car.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
+ball\ PID.out: $(OBJS) $(GEN_CMDS)
 	@echo 'Arm Linker - building target: "$@"'
-	"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/bin/tiarmclang.exe" @"../syscfg_gen/device.opt"  -march=thumbv6m -mcpu=cortex-m0plus -mfloat-abi=soft -mlittle-endian -mthumb -O2 -gdwarf-3 -Wall -Wl,-m"TI-car.map" -Wl,-i"E:/mspm0_sdk_2_10_00_04/source" -Wl,-i"C:/Users/l/workspace_ccstheia/TI-car" -Wl,-i"C:/Users/l/workspace_ccstheia/TI-car/syscfg_gen" -Wl,-i"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/lib" -Wl,--diag_wrap=off -Wl,--display_error_number -Wl,--warn_sections -Wl,--xml_link_info="TI-car_linkInfo.xml" -Wl,--rom_model -o "TI-car.out" $(ORDERED_OBJS)
+	"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/bin/tiarmclang.exe" @"device.opt"  -march=thumbv6m -mcpu=cortex-m0plus -mfloat-abi=soft -mlittle-endian -mthumb -O2 -g -Wall -Wl,-m"ball PID.map" -Wl,-i"C:/TI/mspm0_sdk_2_11_00_07/source" -Wl,-i"C:/Users/l/workspace_ccstheia/ball PID" -Wl,-i"C:/Users/l/workspace_ccstheia/ball PID/Debug/syscfg" -Wl,-i"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/lib" -Wl,--diag_wrap=off -Wl,--display_error_number -Wl,--warn_sections -Wl,--xml_link_info="ball PID_linkInfo.xml" -Wl,--rom_model -o "ball PID.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 
 # Other Targets
 clean:
 	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "syscfg_gen\ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "src\adc.o" "src\main.o" "src\motor.o" "src\pid.o" 
-	-$(RM) "syscfg_gen\ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "src\adc.d" "src\main.d" "src\motor.d" "src\pid.d" "syscfg_gen\ti_msp_dl_config.d" 
+	-$(RM) "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "src\control.o" "src\encoder.o" "src\main.o" "src\motor.o" "src\pid.o" "src\safty.o" "src\vision.o" 
+	-$(RM) "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "src\control.d" "src\encoder.d" "src\main.d" "src\motor.d" "src\pid.d" "src\safty.d" "src\vision.d" 
 	-@echo ' '
 
 .PHONY: all clean dependents

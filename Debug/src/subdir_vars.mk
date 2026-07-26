@@ -6,51 +6,57 @@ SHELL = cmd.exe
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../src/adc.c \
+../src/control.c \
 ../src/encoder.c \
 ../src/main.c \
-../src/mpu6050.c \
 ../src/motor.c \
-../src/pid.c 
+../src/pid.c \
+../src/safty.c \
+../src/vision.c 
 
 C_DEPS += \
-./src/adc.d \
+./src/control.d \
 ./src/encoder.d \
 ./src/main.d \
-./src/mpu6050.d \
 ./src/motor.d \
-./src/pid.d 
+./src/pid.d \
+./src/safty.d \
+./src/vision.d 
 
 OBJS += \
-./src/adc.o \
+./src/control.o \
 ./src/encoder.o \
 ./src/main.o \
-./src/mpu6050.o \
 ./src/motor.o \
-./src/pid.o 
+./src/pid.o \
+./src/safty.o \
+./src/vision.o 
 
 OBJS__QUOTED += \
-"src\adc.o" \
+"src\control.o" \
 "src\encoder.o" \
 "src\main.o" \
-"src\mpu6050.o" \
 "src\motor.o" \
-"src\pid.o" 
+"src\pid.o" \
+"src\safty.o" \
+"src\vision.o" 
 
 C_DEPS__QUOTED += \
-"src\adc.d" \
+"src\control.d" \
 "src\encoder.d" \
 "src\main.d" \
-"src\mpu6050.d" \
 "src\motor.d" \
-"src\pid.d" 
+"src\pid.d" \
+"src\safty.d" \
+"src\vision.d" 
 
 C_SRCS__QUOTED += \
-"../src/adc.c" \
+"../src/control.c" \
 "../src/encoder.c" \
 "../src/main.c" \
-"../src/mpu6050.c" \
 "../src/motor.c" \
-"../src/pid.c" 
+"../src/pid.c" \
+"../src/safty.c" \
+"../src/vision.c" 
 
 

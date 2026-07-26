@@ -3,13 +3,24 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+    int32_t count_raw;
+    int32_t delta;
+    float speed_rps;
+} Encoder_State_t;
+
 void Encoder_Init(void);
-void Encoder_UpdateSpeeds(void);
-int32_t Encoder_GetLeftCount(void);
-int32_t Encoder_GetRightCount(void);
-int16_t Encoder_GetLeftSpeed(void);
-int16_t Encoder_GetRightSpeed(void);
-int16_t Encoder_GetLeftRawSpeed(void);
-int16_t Encoder_GetRightRawSpeed(void);
+void Encoder_PollGpio(void);
+void Encoder_UpdateSpeed(uint32_t dt_ms);
+int32_t Encoder_GetCount(uint8_t idx);
+float Encoder_GetSpeedRps(uint8_t idx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ENCODER_H */
