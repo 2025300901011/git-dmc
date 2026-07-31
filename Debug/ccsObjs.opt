@@ -1,9 +1,0 @@
-"./src/control.o"
-"./src/encoder.o"
-"./src/main.o"
-"./src/motor.o"
-"./src/pid.o"
-"./src/safty.o"
-"./src/vision.o"
--ldevice.cmd.genlibs
--llibc.a
