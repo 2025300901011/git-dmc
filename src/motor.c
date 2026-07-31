@@ -1,113 +1,116 @@
+// ----- AI
+/* TB6612FNG 方向与 PWM 输出；STBY 由 PCB 固定到 5 V，不存在任何软件 STBY 操作。 */
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "ti_msp_dl_config.h"
 #include "motor.h"
 
-#include "app_config.h"
-#include "hw_map.h"
+static int16_t gLeftPwm;
+static int16_t gRightPwm;
 
-static Motor_Config_t g_motor_cfg[2];
-
-static int16_t clamp_duty(int16_t duty, uint16_t lim)
-{
-    if (duty > (int16_t) lim) {
-        return (int16_t) lim;
-    }
-    if (duty < -(int16_t) lim) {
-        return -(int16_t) lim;
-    }
-    return duty;
-}
-
-static uint32_t to_cc(uint16_t duty_abs)
-{
-    return ((uint32_t) duty_abs * (uint32_t) MOTOR_PWM_PERIOD_COUNTS) / (uint32_t) MOTOR_PWM_MAX;
-}
-
-static void set_m1_dir(bool forward)
-{
-    if (forward) {
-        DL_GPIO_setPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M1_AIN1_PIN);
-        DL_GPIO_clearPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M1_AIN2_PIN);
-    } else {
-        DL_GPIO_clearPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M1_AIN1_PIN);
-        DL_GPIO_setPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M1_AIN2_PIN);
-    }
-}
-
-static void set_m2_dir(bool forward)
-{
-    if (forward) {
-        DL_GPIO_setPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M2_BIN1_PIN);
-        DL_GPIO_clearPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M2_BIN2_PIN);
-    } else {
-        DL_GPIO_clearPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M2_BIN1_PIN);
-        DL_GPIO_setPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M2_BIN2_PIN);
-    }
-}
+static void Motor_SetLeftDirection(bool forward);
+static void Motor_SetRightDirection(bool forward);
+static uint16_t Motor_AbsSpeed(int16_t speed);
 
 void Motor_Init(void)
 {
-    Motor_Config_t cfg_default;
-
-    cfg_default.pwm_max      = MOTOR_PWM_MAX;
-    cfg_default.pwm_deadband = MOTOR_PWM_DEADBAND;
-    cfg_default.invert_dir   = false;
-
-    g_motor_cfg[0] = cfg_default;
-    g_motor_cfg[1] = cfg_default;
-
-    /* Normal PCB ties TB6612 STBY high in hardware. */
-    DL_TimerA_startCounter(PWM_TB6612_INST);
-    Motor_StopAll();
+    Motor_Stop();
+    /* 启动 TIMA0 PWM 计数器；Motor_Stop 已保证两个比较值为 0，因此启动不会让电机动作。 */
+    DL_TimerA_startCounter(PWM_MOTOR_INST);
 }
 
-void Motor_SetConfig(Motor_Channel_t ch, const Motor_Config_t *cfg)
+void Motor_SetSpeed(int16_t leftPwm, int16_t rightPwm)
 {
-    if ((cfg == 0) || (ch > MOTOR_CH_B)) {
-        return;
-    }
-    g_motor_cfg[ch] = *cfg;
+    uint16_t leftMagnitude;
+    uint16_t rightMagnitude;
+
+    leftPwm = Motor_ClampSpeed(leftPwm, MOTOR_PWM_PERIOD);
+    rightPwm = Motor_ClampSpeed(rightPwm, MOTOR_PWM_PERIOD);
+    Motor_SetLeftDirection(leftPwm >= 0);
+    Motor_SetRightDirection(rightPwm >= 0);
+    leftMagnitude = Motor_AbsSpeed(leftPwm);
+    rightMagnitude = Motor_AbsSpeed(rightPwm);
+
+    /* 将左轮 PWM 幅值写入 TIMA0 CCP0 比较寄存器，数值为 0..1600。 */
+    DL_TimerA_setCaptureCompareValue(
+        PWM_MOTOR_INST, leftMagnitude, GPIO_PWM_MOTOR_C0_IDX);
+    /* 将右轮 PWM 幅值写入 TIMA0 CCP2 比较寄存器，数值为 0..1600。 */
+    DL_TimerA_setCaptureCompareValue(
+        PWM_MOTOR_INST, rightMagnitude, GPIO_PWM_MOTOR_C2_IDX);
+    gLeftPwm = leftPwm;
+    gRightPwm = rightPwm;
 }
 
-void Motor_SetDuty(Motor_Channel_t ch, int16_t duty)
+void Motor_Stop(void)
 {
-    Motor_Config_t *cfg;
-    bool forward;
-    uint16_t duty_abs;
-    uint32_t cc;
+    /* 立即把左轮 TIMA0 CCP0 比较值清零，使 PWMA 无有效占空比。 */
+    DL_TimerA_setCaptureCompareValue(PWM_MOTOR_INST, 0U, GPIO_PWM_MOTOR_C0_IDX);
+    /* 立即把右轮 TIMA0 CCP2 比较值清零，使 PWMB 无有效占空比。 */
+    DL_TimerA_setCaptureCompareValue(PWM_MOTOR_INST, 0U, GPIO_PWM_MOTOR_C2_IDX);
+    /* 同时拉低 AIN1/AIN2/BIN1/BIN2，避免 STBY 固定高时任一方向组合残留。 */
+    DL_GPIO_clearPins(GPIO_MOTOR_PORT,
+        GPIO_MOTOR_MOTOR_AIN1_PIN | GPIO_MOTOR_MOTOR_AIN2_PIN |
+        GPIO_MOTOR_MOTOR_BIN1_PIN | GPIO_MOTOR_MOTOR_BIN2_PIN);
+    gLeftPwm = 0;
+    gRightPwm = 0;
+}
 
-    if (ch > MOTOR_CH_B) {
-        return;
+int16_t Motor_ClampSpeed(int16_t speed, int16_t maxAbsSpeed)
+{
+    if (maxAbsSpeed < 0) {
+        maxAbsSpeed = (int16_t) -maxAbsSpeed;
     }
-
-    cfg      = &g_motor_cfg[ch];
-    duty     = clamp_duty(duty, cfg->pwm_max);
-    forward  = (duty >= 0);
-    duty_abs = (uint16_t) ((duty >= 0) ? duty : -duty);
-
-    if (duty_abs < cfg->pwm_deadband) {
-        duty_abs = 0;
+    if (speed > maxAbsSpeed) {
+        return maxAbsSpeed;
     }
-    if (cfg->invert_dir) {
-        forward = !forward;
+    if (speed < -maxAbsSpeed) {
+        return (int16_t) -maxAbsSpeed;
     }
+    return speed;
+}
 
-    if (ch == MOTOR_CH_A) {
-        set_m1_dir(forward);
-        cc = to_cc(duty_abs);
-        DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, cc, PWM_TB6612_M1_CC_INDEX);
+int16_t Motor_GetLeftPwm(void)
+{
+    return gLeftPwm;
+}
+
+int16_t Motor_GetRightPwm(void)
+{
+    return gRightPwm;
+}
+
+static void Motor_SetLeftDirection(bool forward)
+{
+    if (forward) {
+        /* 左轮正转：拉高 AIN1。 */
+        DL_GPIO_setPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_AIN1_PIN);
+        /* 左轮正转：同时拉低 AIN2，形成唯一方向组合。 */
+        DL_GPIO_clearPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_AIN2_PIN);
     } else {
-        set_m2_dir(forward);
-        cc = to_cc(duty_abs);
-        DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, cc, PWM_TB6612_M2_CC_INDEX);
+        /* 左轮反转：拉低 AIN1。 */
+        DL_GPIO_clearPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_AIN1_PIN);
+        /* 左轮反转：同时拉高 AIN2。 */
+        DL_GPIO_setPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_AIN2_PIN);
     }
 }
 
-void Motor_StopAll(void)
+static void Motor_SetRightDirection(bool forward)
 {
-    DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, 0U, PWM_TB6612_M1_CC_INDEX);
-    DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, 0U, PWM_TB6612_M2_CC_INDEX);
-
-    DL_GPIO_clearPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M1_AIN1_PIN |
-                                                 GPIO_TB6612_CTRL_M1_AIN2_PIN |
-                                                 GPIO_TB6612_CTRL_M2_BIN1_PIN |
-                                                 GPIO_TB6612_CTRL_M2_BIN2_PIN);
+    if (forward) {
+        /* 右轮车前进：BIN1 高、BIN2 低。 */
+        DL_GPIO_setPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_BIN1_PIN);
+        DL_GPIO_clearPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_BIN2_PIN);
+    } else {
+        /* 右轮反转：BIN1 低、BIN2 高。 */
+        DL_GPIO_clearPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_BIN1_PIN);
+        DL_GPIO_setPins(GPIO_MOTOR_PORT, GPIO_MOTOR_MOTOR_BIN2_PIN);
+    }
 }
+
+static uint16_t Motor_AbsSpeed(int16_t speed)
+{
+    return (speed < 0) ? (uint16_t) -speed : (uint16_t) speed;
+}
+// ----- AI

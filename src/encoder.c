@@ -1,118 +1,104 @@
-#include "encoder.h"
+// ----- AI
+/* MG310 AB 相编码器计数、判向与 150 Hz 速度滤波。 */
 
 #include <stdbool.h>
+#include <stdint.h>
 
-#include "app_config.h"
-#include "hw_map.h"
+#include "ti_msp_dl_config.h"
+#include "encoder.h"
 
+#define ENCODER_FILTER_PREV_WEIGHT (3)
+#define ENCODER_FILTER_CURR_WEIGHT (7)
+#define ENCODER_FILTER_SCALE       (10)
+
+/* 右轮正 PWM 已映射为车辆前进；该机械安装下原始 AB 相前进为负，需反相为正反馈。 */
 #define ENCODER_LEFT_REVERSE  (0)
 #define ENCODER_RIGHT_REVERSE (1)
 
-static Encoder_State_t g_enc[2];
-static volatile int32_t g_count[2];
-static int32_t g_last_count[2];
+static volatile int32_t gLeftCount;
+static volatile int32_t gRightCount;
+static int32_t gLastLeftCount;
+static int32_t gLastRightCount;
+static int16_t gLeftRawSpeed;
+static int16_t gRightRawSpeed;
+static int16_t gLeftSpeed;
+static int16_t gRightSpeed;
+static bool gLeftSpeedInitialized;
+static bool gRightSpeedInitialized;
 
-static void Encoder_HandleEdge(uint8_t idx)
-{
-    uint32_t phase_a_pin = (idx == 0U) ? GPIO_ENCODER_ENCODER_LEFT_A_PIN :
-                                         GPIO_ENCODER_ENCODER_RIGHT_A_PIN;
-    uint32_t phase_b_pin = (idx == 0U) ? GPIO_ENCODER_ENCODER_LEFT_B_PIN :
-                                         GPIO_ENCODER_ENCODER_RIGHT_B_PIN;
-    bool phase_a_high = DL_GPIO_readPins(GPIO_ENCODER_PORT, phase_a_pin) != 0U;
-    bool phase_b_high = DL_GPIO_readPins(GPIO_ENCODER_PORT, phase_b_pin) != 0U;
-    int32_t step = (phase_a_high == phase_b_high) ? 1 : -1;
-
-    if ((idx == 0U && ENCODER_LEFT_REVERSE) ||
-        (idx == 1U && ENCODER_RIGHT_REVERSE)) {
-        step = -step;
-    }
-    g_count[idx] += step;
-}
+static void Encoder_HandleLeftEdge(void);
+static void Encoder_HandleRightEdge(void);
+static int16_t Encoder_SmoothSpeed(
+    int16_t currentSpeed, int16_t lastSpeed, bool *initialized);
+static int16_t Encoder_ClampDelta(int32_t delta);
 
 void Encoder_Init(void)
 {
-    g_enc[0].count_raw = 0;
-    g_enc[1].count_raw = 0;
-    g_enc[0].delta = 0;
-    g_enc[1].delta = 0;
-    g_enc[0].speed_rps = 0.0f;
-    g_enc[1].speed_rps = 0.0f;
-    g_count[0] = 0;
-    g_count[1] = 0;
-    g_last_count[0] = 0;
-    g_last_count[1] = 0;
+    gLeftCount = 0;
+    gRightCount = 0;
+    gLastLeftCount = 0;
+    gLastRightCount = 0;
+    gLeftRawSpeed = 0;
+    gRightRawSpeed = 0;
+    gLeftSpeed = 0;
+    gRightSpeed = 0;
+    gLeftSpeedInitialized = false;
+    gRightSpeedInitialized = false;
 
-    DL_GPIO_clearInterruptStatus(
-        GPIO_ENCODER_PORT,
+    /* 清除左右 A 相上电残留的 GPIO 中断状态，避免初始化后虚假计数。 */
+    DL_GPIO_clearInterruptStatus(GPIO_ENCODER_PORT,
         GPIO_ENCODER_ENCODER_LEFT_A_PIN | GPIO_ENCODER_ENCODER_RIGHT_A_PIN);
+    /* 允许 GPIO 聚合中断 GROUP1 进入 CPU，ISR 只读 A/B 相并加减计数。 */
     NVIC_EnableIRQ(GPIO_ENCODER_INT_IRQN);
 }
 
-void Encoder_PollGpio(void)
+void Encoder_UpdateSpeeds(void)
 {
-    /* Encoder edges are captured by GROUP1_IRQHandler on the normal PCB. */
-}
+    int32_t leftCount;
+    int32_t rightCount;
 
-void Encoder_UpdateSpeed(uint32_t dt_ms)
-{
-    int32_t count0;
-    int32_t count1;
-    float dt_s;
-    float alpha;
-
-    if (dt_ms == 0U) {
-        return;
-    }
-
+    /* 短暂屏蔽 GROUP1 IRQ，使左右计数属于同一 6.667 ms 快照。 */
     NVIC_DisableIRQ(GPIO_ENCODER_INT_IRQN);
-    count0 = g_count[0];
-    count1 = g_count[1];
+    leftCount = gLeftCount;
+    rightCount = gRightCount;
+    /* 快照完成后立即恢复 GROUP1 IRQ，边沿标志在屏蔽期仍由硬件保留。 */
     NVIC_EnableIRQ(GPIO_ENCODER_INT_IRQN);
 
-    g_enc[0].delta = count0 - g_last_count[0];
-    g_enc[1].delta = count1 - g_last_count[1];
-    g_last_count[0] = count0;
-    g_last_count[1] = count1;
-    g_enc[0].count_raw += g_enc[0].delta;
-    g_enc[1].count_raw += g_enc[1].delta;
-
-    dt_s = (float) dt_ms * 0.001f;
-    alpha = ENCODER_SPEED_FILTER_ALPHA;
-    g_enc[0].speed_rps = (1.0f - alpha) * g_enc[0].speed_rps +
-                         alpha * ((float) g_enc[0].delta / dt_s);
-    g_enc[1].speed_rps = (1.0f - alpha) * g_enc[1].speed_rps +
-                         alpha * ((float) g_enc[1].delta / dt_s);
+    gLeftRawSpeed = Encoder_ClampDelta(leftCount - gLastLeftCount);
+    gRightRawSpeed = Encoder_ClampDelta(rightCount - gLastRightCount);
+    gLastLeftCount = leftCount;
+    gLastRightCount = rightCount;
+    gLeftSpeed = Encoder_SmoothSpeed(
+        gLeftRawSpeed, gLeftSpeed, &gLeftSpeedInitialized);
+    gRightSpeed = Encoder_SmoothSpeed(
+        gRightRawSpeed, gRightSpeed, &gRightSpeedInitialized);
 }
 
-int32_t Encoder_GetCount(uint8_t idx)
-{
-    if (idx > 1U) {
-        return 0;
-    }
-    return g_enc[idx].count_raw;
-}
-
-float Encoder_GetSpeedRps(uint8_t idx)
-{
-    if (idx > 1U) {
-        return 0.0f;
-    }
-    return g_enc[idx].speed_rps;
-}
+int32_t Encoder_GetLeftCount(void) { return gLeftCount; }
+int32_t Encoder_GetRightCount(void) { return gRightCount; }
+int16_t Encoder_GetLeftSpeed(void) { return gLeftSpeed; }
+int16_t Encoder_GetRightSpeed(void) { return gRightSpeed; }
+int16_t Encoder_GetLeftRawSpeed(void) { return gLeftRawSpeed; }
+int16_t Encoder_GetRightRawSpeed(void) { return gRightRawSpeed; }
 
 void GROUP1_IRQHandler(void)
 {
+    /* 读取中断聚合器 GROUP1 当前最高优先级来源。 */
     switch (DL_Interrupt_getPendingGroup(DL_INTERRUPT_GROUP_1)) {
         case GPIO_ENCODER_INT_IIDX:
-            if (DL_GPIO_getEnabledInterruptStatus(
-                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_LEFT_A_PIN) != 0U) {
-                Encoder_HandleEdge(0U);
+            /* 只检查已启用的左 A 相边沿标志。 */
+            if (DL_GPIO_getEnabledInterruptStatus(GPIO_ENCODER_PORT,
+                    GPIO_ENCODER_ENCODER_LEFT_A_PIN) != 0U) {
+                Encoder_HandleLeftEdge();
+                /* 左边沿计数后清对应硬件标志，允许下一边沿再次触发。 */
                 DL_GPIO_clearInterruptStatus(
                     GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_LEFT_A_PIN);
             }
-            if (DL_GPIO_getEnabledInterruptStatus(
-                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_RIGHT_A_PIN) != 0U) {
-                Encoder_HandleEdge(1U);
+            /* 只检查已启用的右 A 相边沿标志。 */
+            if (DL_GPIO_getEnabledInterruptStatus(GPIO_ENCODER_PORT,
+                    GPIO_ENCODER_ENCODER_RIGHT_A_PIN) != 0U) {
+                Encoder_HandleRightEdge();
+                /* 右边沿计数后清对应硬件标志。 */
                 DL_GPIO_clearInterruptStatus(
                     GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_RIGHT_A_PIN);
             }
@@ -121,3 +107,49 @@ void GROUP1_IRQHandler(void)
             break;
     }
 }
+
+static void Encoder_HandleLeftEdge(void)
+{
+    /* 读左 A 相当前电平，与 B 相关系决定方向。 */
+    bool phaseAHigh = DL_GPIO_readPins(GPIO_ENCODER_PORT,
+        GPIO_ENCODER_ENCODER_LEFT_A_PIN) != 0U;
+    /* 读左 B 相当前电平，B 相不开中断。 */
+    bool phaseBHigh = DL_GPIO_readPins(GPIO_ENCODER_PORT,
+        GPIO_ENCODER_ENCODER_LEFT_B_PIN) != 0U;
+    int32_t step = (phaseAHigh == phaseBHigh) ? 1 : -1;
+    if (ENCODER_LEFT_REVERSE) { step = -step; }
+    gLeftCount += step;
+}
+
+static void Encoder_HandleRightEdge(void)
+{
+    /* 读右 A 相当前电平，与 B 相关系决定方向。 */
+    bool phaseAHigh = DL_GPIO_readPins(GPIO_ENCODER_PORT,
+        GPIO_ENCODER_ENCODER_RIGHT_A_PIN) != 0U;
+    /* 读右 B 相当前电平，B 相不开中断。 */
+    bool phaseBHigh = DL_GPIO_readPins(GPIO_ENCODER_PORT,
+        GPIO_ENCODER_ENCODER_RIGHT_B_PIN) != 0U;
+    int32_t step = (phaseAHigh == phaseBHigh) ? 1 : -1;
+    if (ENCODER_RIGHT_REVERSE) { step = -step; }
+    gRightCount += step;
+}
+
+static int16_t Encoder_SmoothSpeed(
+    int16_t currentSpeed, int16_t lastSpeed, bool *initialized)
+{
+    if (!*initialized) {
+        *initialized = true;
+        return currentSpeed;
+    }
+    return (int16_t) ((((int32_t) lastSpeed * ENCODER_FILTER_PREV_WEIGHT) +
+        ((int32_t) currentSpeed * ENCODER_FILTER_CURR_WEIGHT)) /
+        ENCODER_FILTER_SCALE);
+}
+
+static int16_t Encoder_ClampDelta(int32_t delta)
+{
+    if (delta > INT16_MAX) { return INT16_MAX; }
+    if (delta < INT16_MIN) { return INT16_MIN; }
+    return (int16_t) delta;
+}
+// ----- AI
