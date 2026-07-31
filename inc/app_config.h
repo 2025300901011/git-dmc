@@ -25,10 +25,22 @@ extern "C" {
 #define VISION_TIMEOUT_MS                (100U)
 
 /* Image center and target (pixel coordinates) */
-#define VISION_IMG_W                     (320.0f)
-#define VISION_IMG_H                     (240.0f)
+#define VISION_IMG_W                     (160.0f)
+#define VISION_IMG_H                     (120.0f)
 #define TARGET_X_DEFAULT                 (VISION_IMG_W * 0.5f)
 #define TARGET_Y_DEFAULT                 (VISION_IMG_H * 0.5f)
+
+/* Key-driven target points. Replace these after camera/track calibration. */
+#define APP_TARGET_CENTER_X              TARGET_X_DEFAULT
+#define APP_TARGET_CENTER_Y              TARGET_Y_DEFAULT
+#define APP_TARGET_POS_5CM_X             (TARGET_X_DEFAULT + 20.0f)
+#define APP_TARGET_POS_5CM_Y             TARGET_Y_DEFAULT
+#define APP_TARGET_NEG_5CM_X             (TARGET_X_DEFAULT - 20.0f)
+#define APP_TARGET_NEG_5CM_Y             TARGET_Y_DEFAULT
+#define APP_TARGET_STABLE_TOLERANCE      (4.0f)
+#define APP_TARGET_STABLE_TIME_MS        (500U)
+#define APP_KEY_SCAN_PERIOD_MS           (10U)
+#define APP_KEY_DEBOUNCE_TICKS           (3U)
 
 /* Speed estimator */
 #define ENCODER_SPEED_FILTER_ALPHA       (0.20f)

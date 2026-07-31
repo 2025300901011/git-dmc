@@ -78,6 +78,7 @@ void Control_Enable(bool en)
 {
     g_target.enabled = en;
     if (!en) {
+        Motor_StopAll();
         g_m1_ref = 0.0f;
         g_m2_ref = 0.0f;
         PID_Reset(&g_pid_pos_x);
@@ -87,6 +88,29 @@ void Control_Enable(bool en)
         PID_Reset(&g_pid_pipe);
         g_pipe_target_count = 0.0f;
     }
+}
+
+bool Control_LoadPipeMotorPid(float kp, float ki, float kd)
+{
+    PID_Config_t cpipe;
+
+    if (g_target.enabled || !isfinite(kp) || !isfinite(ki) || !isfinite(kd) ||
+        (kp < 0.0f) || (ki < 0.0f) || (kd < 0.0f)) {
+        return false;
+    }
+
+    cpipe.kp      = kp;
+    cpipe.ki      = ki;
+    cpipe.kd      = kd;
+    cpipe.out_max = PIPE_PWM_MAX_DEFAULT;
+    cpipe.i_max   = PIPE_MOTOR_POS_I_MAX_DEFAULT;
+    PID_LoadConfig(&g_pid_pipe, &cpipe);
+    return true;
+}
+
+bool Control_IsEnabled(void)
+{
+    return g_target.enabled;
 }
 
 void Control_TaskPosLoop(uint32_t now_ms)

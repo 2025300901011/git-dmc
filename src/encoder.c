@@ -1,76 +1,62 @@
 #include "encoder.h"
 
+#include <stdbool.h>
+
 #include "app_config.h"
 #include "hw_map.h"
 
+#define ENCODER_LEFT_REVERSE  (0)
+#define ENCODER_RIGHT_REVERSE (1)
+
 static Encoder_State_t g_enc[2];
-static uint32_t g_qei_last_raw;
-static uint8_t g_enc2_last_state;
-static int32_t g_enc2_last_count;
+static volatile int32_t g_count[2];
+static int32_t g_last_count[2];
 
-static const int8_t g_quad_lut[16] = {
-    0, -1, 1, 0,
-    1, 0, 0, -1,
-    -1, 0, 0, 1,
-    0, 1, -1, 0
-};
-
-static uint8_t enc2_read_state(void)
+static void Encoder_HandleEdge(uint8_t idx)
 {
-    uint8_t s = 0U;
-    if (DL_GPIO_readPins(GPIO_ENC2_INPUT_PORT, GPIO_ENC2_INPUT_ENC2_A_PIN) != 0U) {
-        s |= 0x01U;
-    }
-    if (DL_GPIO_readPins(GPIO_ENC2_INPUT_PORT, GPIO_ENC2_INPUT_ENC2_B_PIN) != 0U) {
-        s |= 0x02U;
-    }
-    return s;
-}
+    uint32_t phase_a_pin = (idx == 0U) ? GPIO_ENCODER_ENCODER_LEFT_A_PIN :
+                                         GPIO_ENCODER_ENCODER_RIGHT_A_PIN;
+    uint32_t phase_b_pin = (idx == 0U) ? GPIO_ENCODER_ENCODER_LEFT_B_PIN :
+                                         GPIO_ENCODER_ENCODER_RIGHT_B_PIN;
+    bool phase_a_high = DL_GPIO_readPins(GPIO_ENCODER_PORT, phase_a_pin) != 0U;
+    bool phase_b_high = DL_GPIO_readPins(GPIO_ENCODER_PORT, phase_b_pin) != 0U;
+    int32_t step = (phase_a_high == phase_b_high) ? 1 : -1;
 
-static int32_t wrap_delta_16(uint32_t now, uint32_t last)
-{
-    int32_t d = (int32_t) now - (int32_t) last;
-    if (d > 32767) {
-        d -= 65536;
-    } else if (d < -32768) {
-        d += 65536;
+    if ((idx == 0U && ENCODER_LEFT_REVERSE) ||
+        (idx == 1U && ENCODER_RIGHT_REVERSE)) {
+        step = -step;
     }
-    return d;
+    g_count[idx] += step;
 }
 
 void Encoder_Init(void)
 {
     g_enc[0].count_raw = 0;
     g_enc[1].count_raw = 0;
-    g_enc[0].delta     = 0;
-    g_enc[1].delta     = 0;
+    g_enc[0].delta = 0;
+    g_enc[1].delta = 0;
     g_enc[0].speed_rps = 0.0f;
     g_enc[1].speed_rps = 0.0f;
+    g_count[0] = 0;
+    g_count[1] = 0;
+    g_last_count[0] = 0;
+    g_last_count[1] = 0;
 
-    g_qei_last_raw   = DL_Timer_getTimerCount(QEI_ENC1_INST);
-    g_enc2_last_state = enc2_read_state();
-    g_enc2_last_count = 0;
-
-    DL_Timer_startCounter(QEI_ENC1_INST);
+    DL_GPIO_clearInterruptStatus(
+        GPIO_ENCODER_PORT,
+        GPIO_ENCODER_ENCODER_LEFT_A_PIN | GPIO_ENCODER_ENCODER_RIGHT_A_PIN);
+    NVIC_EnableIRQ(GPIO_ENCODER_INT_IRQN);
 }
 
 void Encoder_PollGpio(void)
 {
-    uint8_t now_state = enc2_read_state();
-    uint8_t idx       = (uint8_t) ((g_enc2_last_state << 2U) | now_state);
-    int8_t step       = g_quad_lut[idx & 0x0FU];
-
-    if (step != 0) {
-        g_enc[1].count_raw += (int32_t) step;
-    }
-    g_enc2_last_state = now_state;
+    /* Encoder edges are captured by GROUP1_IRQHandler on the normal PCB. */
 }
 
 void Encoder_UpdateSpeed(uint32_t dt_ms)
 {
-    uint32_t qei_now;
-    int32_t d0;
-    int32_t d1;
+    int32_t count0;
+    int32_t count1;
     float dt_s;
     float alpha;
 
@@ -78,22 +64,24 @@ void Encoder_UpdateSpeed(uint32_t dt_ms)
         return;
     }
 
-    qei_now = DL_Timer_getTimerCount(QEI_ENC1_INST);
-    d0      = wrap_delta_16(qei_now, g_qei_last_raw);
-    d1      = g_enc[1].count_raw - g_enc2_last_count;
+    NVIC_DisableIRQ(GPIO_ENCODER_INT_IRQN);
+    count0 = g_count[0];
+    count1 = g_count[1];
+    NVIC_EnableIRQ(GPIO_ENCODER_INT_IRQN);
 
-    g_qei_last_raw    = qei_now;
-    g_enc[0].count_raw += d0;
-    g_enc[0].delta     = d0;
+    g_enc[0].delta = count0 - g_last_count[0];
+    g_enc[1].delta = count1 - g_last_count[1];
+    g_last_count[0] = count0;
+    g_last_count[1] = count1;
+    g_enc[0].count_raw += g_enc[0].delta;
+    g_enc[1].count_raw += g_enc[1].delta;
 
-    g_enc[1].delta = d1;
-    g_enc2_last_count = g_enc[1].count_raw;
-
-    dt_s  = (float) dt_ms * 0.001f;
+    dt_s = (float) dt_ms * 0.001f;
     alpha = ENCODER_SPEED_FILTER_ALPHA;
-
-    g_enc[0].speed_rps = (1.0f - alpha) * g_enc[0].speed_rps + alpha * ((float) d0 / dt_s);
-    g_enc[1].speed_rps = (1.0f - alpha) * g_enc[1].speed_rps + alpha * ((float) d1 / dt_s);
+    g_enc[0].speed_rps = (1.0f - alpha) * g_enc[0].speed_rps +
+                         alpha * ((float) g_enc[0].delta / dt_s);
+    g_enc[1].speed_rps = (1.0f - alpha) * g_enc[1].speed_rps +
+                         alpha * ((float) g_enc[1].delta / dt_s);
 }
 
 int32_t Encoder_GetCount(uint8_t idx)
@@ -110,4 +98,26 @@ float Encoder_GetSpeedRps(uint8_t idx)
         return 0.0f;
     }
     return g_enc[idx].speed_rps;
+}
+
+void GROUP1_IRQHandler(void)
+{
+    switch (DL_Interrupt_getPendingGroup(DL_INTERRUPT_GROUP_1)) {
+        case GPIO_ENCODER_INT_IIDX:
+            if (DL_GPIO_getEnabledInterruptStatus(
+                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_LEFT_A_PIN) != 0U) {
+                Encoder_HandleEdge(0U);
+                DL_GPIO_clearInterruptStatus(
+                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_LEFT_A_PIN);
+            }
+            if (DL_GPIO_getEnabledInterruptStatus(
+                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_RIGHT_A_PIN) != 0U) {
+                Encoder_HandleEdge(1U);
+                DL_GPIO_clearInterruptStatus(
+                    GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_RIGHT_A_PIN);
+            }
+            break;
+        default:
+            break;
+    }
 }

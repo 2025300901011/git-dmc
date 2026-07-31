@@ -8,57 +8,13 @@ SHELL = cmd.exe
 SYSCFG_SRCS += \
 ../empty.syscfg 
 
-C_SRCS += \
-./ti_msp_dl_config.c \
-C:/TI/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c 
-
-GEN_CMDS += \
-./device_linker.cmd 
-
-GEN_FILES += \
-./device_linker.cmd \
-./device.opt \
-./ti_msp_dl_config.c 
-
-C_DEPS += \
-./ti_msp_dl_config.d \
-./startup_mspm0g350x_ticlang.d 
-
-GEN_OPTS += \
-./device.opt 
-
-OBJS += \
-./ti_msp_dl_config.o \
-./startup_mspm0g350x_ticlang.o 
-
 GEN_MISC_FILES += \
-./device.cmd.genlibs \
-./ti_msp_dl_config.h \
-./Event.dot 
-
-OBJS__QUOTED += \
-"ti_msp_dl_config.o" \
-"startup_mspm0g350x_ticlang.o" 
+./error.h 
 
 GEN_MISC_FILES__QUOTED += \
-"device.cmd.genlibs" \
-"ti_msp_dl_config.h" \
-"Event.dot" 
-
-C_DEPS__QUOTED += \
-"ti_msp_dl_config.d" \
-"startup_mspm0g350x_ticlang.d" 
-
-GEN_FILES__QUOTED += \
-"device_linker.cmd" \
-"device.opt" \
-"ti_msp_dl_config.c" 
+"error.h" 
 
 SYSCFG_SRCS__QUOTED += \
 "../empty.syscfg" 
-
-C_SRCS__QUOTED += \
-"./ti_msp_dl_config.c" \
-"C:/TI/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" 
 
 

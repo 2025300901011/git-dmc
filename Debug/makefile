@@ -4,14 +4,12 @@
 
 SHELL = cmd.exe
 
-CG_TOOL_ROOT := E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS
+CG_TOOL_ROOT := C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS
 
-GEN_OPTS__FLAG := @"./device.opt" 
-GEN_CMDS__FLAG := -Wl,-l"./device_linker.cmd" 
+GEN_OPTS__FLAG := 
+GEN_CMDS__FLAG := 
 
 ORDERED_OBJS += \
-"./ti_msp_dl_config.o" \
-"./startup_mspm0g350x_ticlang.o" \
 "./src/control.o" \
 "./src/encoder.o" \
 "./src/main.o" \
@@ -137,15 +135,15 @@ all: $(OBJS) $(GEN_CMDS)
 # Tool invocations
 ball\ PID.out: $(OBJS) $(GEN_CMDS)
 	@echo 'Arm Linker - building target: "$@"'
-	"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/bin/tiarmclang.exe" @"device.opt"  -march=thumbv6m -mcpu=cortex-m0plus -mfloat-abi=soft -mlittle-endian -mthumb -O2 -g -Wall -Wl,-m"ball PID.map" -Wl,-i"C:/TI/mspm0_sdk_2_11_00_07/source" -Wl,-i"C:/Users/l/workspace_ccstheia/ball PID" -Wl,-i"C:/Users/l/workspace_ccstheia/ball PID/Debug/syscfg" -Wl,-i"E:/ccs/tools/compiler/ti-cgt-armllvm_4.0.4.LTS/lib" -Wl,--diag_wrap=off -Wl,--display_error_number -Wl,--warn_sections -Wl,--xml_link_info="ball PID_linkInfo.xml" -Wl,--rom_model -o "ball PID.out" $(ORDERED_OBJS)
+	"C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/bin/tiarmclang.exe" @"device.opt"  -march=thumbv6m -mcpu=cortex-m0plus -mfloat-abi=soft -mlittle-endian -mthumb -O2 -g -Wall -Wl,-m"ball PID.map" -Wl,-i"/source" -Wl,-i"C:/Users/l/Desktop/git" -Wl,-i"C:/Users/l/Desktop/git/Debug/syscfg" -Wl,-i"C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/lib" -Wl,--diag_wrap=off -Wl,--display_error_number -Wl,--warn_sections -Wl,--xml_link_info="ball PID_linkInfo.xml" -Wl,--rom_model -o "ball PID.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "src\control.o" "src\encoder.o" "src\main.o" "src\motor.o" "src\pid.o" "src\safty.o" "src\vision.o" 
-	-$(RM) "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "src\control.d" "src\encoder.d" "src\main.d" "src\motor.d" "src\pid.d" "src\safty.d" "src\vision.d" 
+	-$(RM) $(GEN_MISC_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
+	-$(RM) "src\control.o" "src\encoder.o" "src\main.o" "src\motor.o" "src\pid.o" "src\safty.o" "src\vision.o" 
+	-$(RM) "src\control.d" "src\encoder.d" "src\main.d" "src\motor.d" "src\pid.d" "src\safty.d" "src\vision.d" 
 	-@echo ' '
 
 .PHONY: all clean dependents

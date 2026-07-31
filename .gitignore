@@ -1,0 +1,11 @@
+Debug/
+*.out
+*.map
+*.o
+*.d
+ti_msp_dl_config.c
+ti_msp_dl_config.h
+device_linker.cmd
+device.cmd.genlibs
+device.opt
+ccsObjs.opt

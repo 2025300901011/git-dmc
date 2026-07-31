@@ -54,8 +54,8 @@ void Motor_Init(void)
     g_motor_cfg[0] = cfg_default;
     g_motor_cfg[1] = cfg_default;
 
-    DL_GPIO_setPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_DRV_STBY_PIN);
-    DL_Timer_startCounter(PWM_TB6612_INST);
+    /* Normal PCB ties TB6612 STBY high in hardware. */
+    DL_TimerA_startCounter(PWM_TB6612_INST);
     Motor_StopAll();
 }
 
@@ -93,18 +93,18 @@ void Motor_SetDuty(Motor_Channel_t ch, int16_t duty)
     if (ch == MOTOR_CH_A) {
         set_m1_dir(forward);
         cc = to_cc(duty_abs);
-        DL_Timer_setCaptureCompareValue(PWM_TB6612_INST, cc, DL_TIMER_CC_0_INDEX);
+        DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, cc, PWM_TB6612_M1_CC_INDEX);
     } else {
         set_m2_dir(forward);
         cc = to_cc(duty_abs);
-        DL_Timer_setCaptureCompareValue(PWM_TB6612_INST, cc, DL_TIMER_CC_1_INDEX);
+        DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, cc, PWM_TB6612_M2_CC_INDEX);
     }
 }
 
 void Motor_StopAll(void)
 {
-    DL_Timer_setCaptureCompareValue(PWM_TB6612_INST, 0U, DL_TIMER_CC_0_INDEX);
-    DL_Timer_setCaptureCompareValue(PWM_TB6612_INST, 0U, DL_TIMER_CC_1_INDEX);
+    DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, 0U, PWM_TB6612_M1_CC_INDEX);
+    DL_TimerA_setCaptureCompareValue(PWM_TB6612_INST, 0U, PWM_TB6612_M2_CC_INDEX);
 
     DL_GPIO_clearPins(GPIO_TB6612_CTRL_PORT, GPIO_TB6612_CTRL_M1_AIN1_PIN |
                                                  GPIO_TB6612_CTRL_M1_AIN2_PIN |

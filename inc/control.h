@@ -17,6 +17,8 @@ typedef struct {
 void Control_Init(void);
 void Control_SetTarget(float x, float y);
 void Control_Enable(bool en);
+bool Control_LoadPipeMotorPid(float kp, float ki, float kd);
+bool Control_IsEnabled(void);
 void Control_TaskPosLoop(uint32_t now_ms);
 void Control_TaskVelLoop(uint32_t now_ms);
 
